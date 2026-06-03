@@ -6,8 +6,215 @@
     <title>Менеджер доступов (E2E Шифрование)</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    
-    <link rel="stylesheet" href="https://hochuPivo.github.io/b24-password-manager/css/style.css">
+    <style>
+        /* Переменные Битрикс24 */
+        :root {
+            --b24-font: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --b24-primary: #2fc6f6;
+            --b24-primary-hover: #1cb0df;
+            --b24-danger: #ff5752;
+            --b24-danger-hover: #d94b46;
+            --b24-success: #7bd500;
+            --b24-text: #535c69;
+            --b24-text-light: #80868e;
+            --b24-border: #c6cdd3;
+            --b24-bg: #eef2f4;
+            --b24-surface: #ffffff;
+            --b24-radius: 4px;
+        }
+
+        body { font-family: var(--b24-font); color: var(--b24-text); background: var(--b24-surface); padding: 0; margin: 0; }
+        h2 { margin-top: 0; font-weight: 400; color: #333; }
+        
+        .screen { display: none; padding: 20px; box-sizing: border-box; }
+        .screen.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Экраны авторизации */
+        .auth-box {
+            background: var(--b24-surface); border: 1px solid var(--b24-border); 
+            padding: 30px; border-radius: var(--b24-radius); 
+            max-width: 400px; margin: 60px auto; text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .auth-box p { font-size: 14px; color: var(--b24-text-light); margin-bottom: 20px; }
+        .auth-box input {
+            width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 15px;
+            border: 1px solid var(--b24-border); border-radius: var(--b24-radius); 
+            font-size: 14px; font-family: var(--b24-font); outline: none; transition: 0.2s;
+        }
+        .auth-box input:focus { border-color: var(--b24-primary); }
+
+        /* Шапка десктоп */
+        .sticky-header {
+            position: sticky; top: 0; background: var(--b24-surface); z-index: 100;
+            padding: 20px; border-bottom: 1px solid var(--b24-border);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
+        }
+
+        /* Общий контейнер управления */
+        .top-bar-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex: 1; justify-content: flex-end; }
+        .mobile-row-first { display: flex; gap: 10px; align-items: center; flex: 1; justify-content: flex-end; }
+        
+        #search_input {
+            padding: 0 12px; height: 38px; border: 1px solid var(--b24-border); 
+            border-radius: var(--b24-radius); font-size: 14px; outline: none; transition: 0.2s;
+            flex: 1; min-width: 150px; max-width: 300px;
+        }
+        #search_input:focus { border-color: var(--b24-primary); }
+
+        #toggle_all_btn { width: 170px; flex: 0 0 170px; text-align: center; }
+
+        /* Инпуты внутри модалок */
+        .modal-form-group { display: flex; flex-direction: column; margin-bottom: 15px; position: relative; }
+        .modal-form-group label { font-size: 13px; margin-bottom: 5px; color: var(--b24-text-light); font-weight: 600; }
+        .input-group {
+            display: flex; align-items: stretch; border: 1px solid var(--b24-border);
+            border-radius: var(--b24-radius); background: var(--b24-surface);
+            box-sizing: border-box; height: 38px; overflow: hidden; transition: border-color 0.2s;
+        }
+        .input-group:focus-within { border-color: var(--b24-primary); }
+        .input-group input {
+            flex: 1; border: none; padding: 0 12px; font-size: 14px;
+            outline: none; background: transparent; height: 100%; box-sizing: border-box; color: var(--b24-text); width: 100%;
+        }
+        .input-group .btn-icon {
+            background: #f8f9fa; border: none; border-left: 1px solid var(--b24-border);
+            padding: 0 15px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            height: 100%; margin: 0; box-sizing: border-box; transition: 0.2s;
+        }
+        .input-group .btn-icon:hover { background: #eef2f4; }
+
+        /* КАСТОМНЫЙ ДИЗАЙН ДЛЯ ПОДСКАЗОК */
+        .custom-dropdown {
+            display: none; position: absolute; top: 62px; left: 0; width: 100%;
+            background: var(--b24-surface); border: 1px solid var(--b24-border);
+            border-radius: var(--b24-radius); box-shadow: 0 4px 12px rgba(83, 92, 105, 0.15);
+            z-index: 600; max-height: 180px; overflow-y: auto; box-sizing: border-box;
+        }
+        .custom-dropdown.active { display: block; }
+        .dropdown-item {
+            padding: 10px 12px; font-size: 14px; color: var(--b24-text);
+            cursor: pointer; transition: background 0.1s;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .dropdown-item:hover { background: var(--b24-bg); color: #000; }
+        .dropdown-item-type { font-size: 11px; padding: 2px 6px; background: #dfe6e9; border-radius: 3px; color: #535c69; font-weight: 600; }
+
+        /* Кнопки */
+        .btn { 
+            padding: 0 18px; height: 38px; border: none; border-radius: var(--b24-radius); 
+            cursor: pointer; font-size: 14px; font-weight: 600; color: #fff; 
+            font-family: var(--b24-font); transition: 0.2s; box-sizing: border-box;
+            white-space: nowrap; display: inline-flex; align-items: center; justify-content: center;
+        }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-primary { background: var(--b24-primary); }
+        .btn-primary:hover:not(:disabled) { background: var(--b24-primary-hover); }
+        .btn-danger { background: var(--b24-danger); }
+        .btn-danger:hover { background: var(--b24-danger-hover); }
+        .btn-edit { background: #eef2f4; color: #535c69; }
+        .btn-edit:hover { background: #dfe6e9; }
+        .btn-outline { background: transparent; border: 1px solid var(--b24-border); color: var(--b24-text); }
+        .btn-outline:hover { background: #eef2f4; }
+        
+        /* Таблица десктоп */
+        .app-body { padding: 20px; box-sizing: border-box; width: 100%; }
+        .table-responsive { width: 100%; border: 1px solid var(--b24-border); border-radius: var(--b24-radius); background: #fff; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; margin: 0; } 
+        th, td { border-bottom: 1px solid var(--b24-border); padding: 12px 15px; text-align: left; font-size: 14px; box-sizing: border-box; }
+        td { word-break: break-word; overflow-wrap: break-word; } 
+        th { color: var(--b24-text-light); font-weight: normal; font-size: 13px; background: #fcfcfc; white-space: nowrap; } 
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background-color: #f6f8f9; }
+        
+        /* Ширина ячеек действий строго 160 пикселей */
+        th.actions-col, td.actions-cell { width: 160px; min-width: 160px; max-width: 160px; text-align: left; }
+        
+        /* Принадлежность */
+        .affiliation-link { color: var(--b24-primary); text-decoration: none; font-weight: 600; }
+        .affiliation-link:hover { text-decoration: underline; }
+
+        .error-msg { color: var(--b24-danger); font-size: 13px; margin-top: 10px; display: none; width: 100%; text-align: center; }
+
+        /* Модальные окна */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(83, 92, 105, 0.6); z-index: 1000; justify-content: center; align-items: center; padding: 15px; box-sizing: border-box;
+        }
+        .modal-overlay.active { display: flex; animation: fadeIn 0.2s; }
+        .modal-content {
+            background: var(--b24-surface); padding: 25px; border-radius: var(--b24-radius);
+            width: 100%; max-width: 500px; max-height: 95vh; overflow-y: auto; box-shadow: 0 7px 21px rgba(0,0,0,0.15); box-sizing: border-box;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h3 { margin: 0; font-weight: 400; color: #333; }
+        .modal-close { background: none; border: none; font-size: 28px; cursor: pointer; color: var(--b24-text-light); line-height: 1; padding: 0; }
+        .modal-close:hover { color: var(--b24-danger); }
+        
+        .modal-list { max-height: 280px; overflow-y: auto; border: 1px solid var(--b24-border); border-radius: var(--b24-radius); margin-top: 15px; }
+        .modal-list-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--b24-bg); gap: 10px; }
+        .modal-list-row:last-child { border-bottom: none; }
+
+        /* Мобильная адаптивность */
+        @media (max-width: 768px) {
+            .sticky-header { padding: 15px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+            .sticky-header h2 { text-align: center; margin: 0; }
+            
+            /* Единая сетка без дублирования HTML-тегов */
+            .top-bar-controls { display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px; width: 100%; align-items: center; justify-content: space-between; }
+            
+            /* Строка 1: Поиск и переключатель встают в один ряд */
+            .mobile-row-first { display: flex; gap: 10px; width: 100%; flex: none; }
+            #search_input { flex: 1; min-width: 0; max-width: none; }
+            #toggle_all_btn { flex: 0 0 auto; width: 150px !important; }
+            
+            /* Строка 2: Кнопка добавить переносится под них на всю ширину */
+            .top-bar-controls .btn-primary { width: 100% !important; margin: 0; order: 3; }
+            
+            /* Строка 3: Кнопки Типы и Ключ встают 50 на 50 в самом низу */
+            .top-bar-controls .btn-outline:not(#toggle_all_btn) { width: calc(50% - 5px) !important; margin: 0; order: 4; }
+
+            .app-body { padding: 10px; }
+            
+            /* Блочное отображение в виде карточек-списков для мобилок */
+            .table-responsive { border: none; background: transparent; overflow: visible; }
+            table, thead, tbody, th, td, tr { display: block; width: 100% !important; box-sizing: border-box; }
+            thead { display: none; } 
+            
+            tr { 
+                display: block !important;
+                background: #fff; 
+                border: 1px solid var(--b24-border); 
+                border-radius: var(--b24-radius); 
+                margin-bottom: 15px; 
+                padding: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            }
+            tr:hover td { background-color: transparent; }
+            td { display: block !important; border: none; padding: 6px 0; text-align: left; position: relative; }
+            
+            /* Метки полей в карточке списка */
+            td:nth-of-type(1)::before { content: "Тип: "; font-weight: 600; color: var(--b24-text-light); }
+            td:nth-of-type(2)::before { content: "Адрес: "; font-weight: 600; color: var(--b24-text-light); }
+            td:nth-of-type(3)::before { content: "Логин: "; font-weight: 600; color: var(--b24-text-light); }
+            td:nth-of-type(4)::before { content: "Пароль: "; font-weight: 600; color: var(--b24-text-light); }
+            td:nth-of-type(5)::before { content: "Комментарий: "; font-weight: 600; color: var(--b24-text-light); }
+            td.mobile-aff-cell::before { content: "Привязка: "; font-weight: 600; color: var(--b24-text-light); }
+
+            td.actions-cell { 
+                border-top: 1px dashed var(--b24-border); 
+                margin-top: 10px; 
+                padding-top: 12px; 
+                max-width: none !important;
+                width: 100% !important;
+            }
+            td.actions-cell::before { content: none; }
+            td.actions-cell div { display: flex !important; }
+            td.actions-cell .btn { flex: 1; }
+        }
+    </style>
 </head>
 <body>
 
@@ -41,7 +248,7 @@
             <input type="password" id="change_old_pwd" placeholder="Текущий пароль">
             <div class="input-group" style="margin-bottom: 15px; width: 100%;">
                 <input type="text" id="change_new_pwd" placeholder="Новый пароль">
-                <button class="btn-icon" title="Сгенерировать" onclick="generateAndFillPassword('change_new_pwd')">🎲</button>
+                <button class="btn-icon" title="Сгенерировать надежный пароль" onclick="generateAndFillPassword('change_new_pwd')">🎲</button>
             </div>
             <button class="btn btn-danger" style="width: 100%; margin-bottom: 10px;" onclick="executePasswordChange()">Сменить пароль</button>
             <button class="btn btn-outline" style="width: 100%;" onclick="switchScreen('screen_app')">Отмена</button>
@@ -51,11 +258,17 @@
 
     <div id="screen_app" class="screen" style="padding:0;">
         <div class="sticky-header">
-            <h2 style="margin: 0;">Все доступы системы</h2>
-            <div class="top-bar-buttons">
+            <h2>Доступы</h2>
+            <div class="top-bar-controls">
+                <div class="mobile-row-first">
+                    <input type="text" id="search_input" placeholder="🔍 Поиск..." oninput="renderTable()">
+                    <button class="btn btn-outline" id="toggle_all_btn" onclick="toggleShowAll()">👁️ Показать все</button>
+                </div>
+                
                 <button class="btn btn-primary" onclick="openAddModal()">➕ Добавить</button>
+                
                 <button class="btn btn-outline" onclick="openTypesModal()">⚙️ Типы</button>
-                <button class="btn btn-outline" onclick="switchScreen('screen_change_master')">🔑 Пароль</button>
+                <button class="btn btn-outline" onclick="switchScreen('screen_change_master')">🔑</button>
             </div>
         </div>
 
@@ -64,13 +277,13 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 15%;">Тип</th>
-                            <th style="width: 20%;">Адрес</th>
-                            <th style="width: 15%;">Логин</th>
-                            <th style="width: 15%;">Пароль</th>
-                            <th style="width: 15%;">Комментарий</th>
-                            <th style="width: 10%;">Принадлежность</th>
-                            <th>Действия</th>
+                            <th>Тип</th>
+                            <th>Адрес</th>
+                            <th>Логин</th>
+                            <th>Пароль</th>
+                            <th>Комментарий</th>
+                            <th id="th_affiliation" style="display: none;">Принадлежность</th>
+                            <th class="actions-col">Действия</th>
                         </tr>
                     </thead>
                     <tbody id="access_table_body">
@@ -91,7 +304,18 @@
             <input type="hidden" id="element_id" value="">
             
             <div class="modal-form-group">
-                <label>Тип доступа (Выберите или введите свой)</label>
+                <label>Принадлежность (Поиск по CRM)</label>
+                <div class="input-group">
+                    <input type="hidden" id="modal_entity_id" value="">
+                    <input type="hidden" id="modal_entity_type" value="">
+                    <input type="text" id="crm_search_input" placeholder="Начните вводить название компании, лида..." autocomplete="off" oninput="handleCrmSearch()">
+                    <button class="btn-icon" title="Очистить привязку" onclick="clearCrmLink()" style="font-size: 16px;">×</button>
+                </div>
+                <div id="crm_search_dropdown" class="custom-dropdown"></div>
+            </div>
+
+            <div class="modal-form-group">
+                <label>Тип доступа</label>
                 <div class="input-group">
                     <input type="text" id="acc_type" placeholder="Например: FTP" autocomplete="off" onfocus="showTypeDropdown()" oninput="filterTypeDropdown()">
                 </div>
@@ -151,6 +375,472 @@
         </div>
     </div>
 
-    <script src="https://hochuPivo.github.io/b24-password-manager/js/app.js"></script>
+    <script>
+        const ENTITY_ID = 'b24_pwd_vault_v5'; 
+        const AUTH_RECORD_NAME = '---AUTH-CHECK---';
+        const TYPES_RECORD_NAME = '---ACCESS-TYPES---';
+        const PWD_RECORD_NAME = '---PWD-RECORD---';
+        const AUTH_CHECK_WORD = 'OK_VAULT_OPEN';
+
+        const DOM = {
+            screens: document.querySelectorAll('.screen'),
+            errors: document.querySelectorAll('.error-msg'),
+            tbody: document.getElementById('access_table_body'),
+            dropdown: document.getElementById('custom_type_dropdown'),
+            crmDropdown: document.getElementById('crm_search_dropdown'),
+            inputs: {
+                id: document.getElementById('element_id'),
+                type: document.getElementById('acc_type'),
+                name: document.getElementById('name'),
+                login: document.getElementById('login'),
+                password: document.getElementById('password'),
+                comment: document.getElementById('comment'),
+                crmSearch: document.getElementById('crm_search_input'),
+                crmEntityId: document.getElementById('modal_entity_id'),
+                crmEntityType: document.getElementById('modal_entity_type')
+            },
+            buttons: { save: document.getElementById('save_btn') }
+        };
+
+        let currentEntityId = null;
+        let currentEntityType = null;
+        let showAll = false;
+        let masterKey = null; 
+        let authRecordId = null; 
+        let typesRecordId = null;
+        let authRecordEncryptedPayload = null;
+        let allAppRecords = []; 
+        let accessTypes = ['Почта', 'CRM', 'Хостинг', 'Сервер', 'База данных'];
+        let entityCache = {}; 
+        let spaTypes = []; 
+
+        // --- ИНИЦИАЛИЗАЦИЯ И ПРИВЯЗКА К СУЩНОСТИ CRM ---
+        BX24.init(function() {
+            let info = BX24.placement.info();
+            
+            if (info && info.options && info.options.ID) {
+                currentEntityId = parseInt(info.options.ID);
+                let p = info.placement;
+                if (p.includes('COMPANY')) currentEntityType = 'COMPANY';
+                else if (p.includes('LEAD')) currentEntityType = 'LEAD';
+                else if (p.includes('DEAL')) currentEntityType = 'DEAL';
+                else currentEntityType = p;
+            } else {
+                // Если ID сущности не передан (левое меню, самостоятельная страница и т.д.)
+                currentEntityId = '';
+                currentEntityType = '';
+            }
+
+            BX24.callMethod('crm.type.list', {}, function(res) {
+                if (res.data() && res.data().types) {
+                    spaTypes = res.data().types.map(t => ({ id: t.entityTypeId, title: t.title }));
+                }
+                initEntityStorage();
+            });
+        });
+
+        document.addEventListener('click', function(e) {
+            if (e.target !== DOM.inputs.type && e.target !== DOM.dropdown) hideTypeDropdown();
+            if (e.target !== DOM.inputs.crmSearch && e.target !== DOM.crmDropdown) DOM.crmDropdown.classList.remove('active');
+        });
+
+        const encryptText = (text, key) => CryptoJS.AES.encrypt(text, key).toString();
+        const decryptText = (cipher, key) => {
+            try { return CryptoJS.AES.decrypt(cipher, key).toString(CryptoJS.enc.Utf8) || null; } 
+            catch (e) { return null; }
+        };
+        const generatePassword = (len = 16) => {
+            const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~";
+            return Array.from({length: len}, () => charset[Math.floor(Math.random() * charset.length)]).join('');
+        };
+        const generateAndFillPassword = (id) => document.getElementById(id).value = generatePassword();
+
+        function switchScreen(screenId) {
+            DOM.screens.forEach(el => el.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            DOM.errors.forEach(el => el.style.display = 'none');
+        }
+
+        function openAddModal() {
+            document.getElementById('add_modal').classList.add('active');
+            renderTypesSelect(); 
+            if (!DOM.inputs.id.value && currentEntityId && currentEntityType) {
+                let cacheKey = currentEntityType + '_' + currentEntityId;
+                DOM.inputs.crmEntityId.value = currentEntityId;
+                DOM.inputs.crmEntityType.value = currentEntityType;
+                DOM.inputs.crmSearch.value = entityCache[cacheKey] ? formatEntityCacheTitle(currentEntityType, entityCache[cacheKey]) : (`#${currentEntityId}`);
+            }
+        }
+        
+        function closeAddModal() {
+            document.getElementById('add_modal').classList.remove('active');
+            Object.values(DOM.inputs).forEach(input => input.value = '');
+            document.getElementById('form_error').style.display = 'none';
+            document.getElementById('add_modal_title').innerText = 'Добавить доступ';
+            hideTypeDropdown();
+            DOM.crmDropdown.classList.remove('active');
+        }
+
+        let crmSearchTimeout = null;
+        function clearCrmLink() {
+            DOM.inputs.crmEntityId.value = ''; DOM.inputs.crmEntityType.value = ''; DOM.inputs.crmSearch.value = '';
+            DOM.crmDropdown.classList.remove('active');
+        }
+
+        function formatEntityCacheTitle(typeCode, rawTitle) {
+            let label = typeCode;
+            if(typeCode === 'COMPANY') label = 'Компания';
+            else if(typeCode === 'LEAD') label = 'Лид';
+            else if(typeCode === 'DEAL') label = 'Сделка';
+            else if(typeCode === 'CONTACT') label = 'Контакт';
+            else { let fSpa = spaTypes.find(s => String(s.id) === String(typeCode)); if(fSpa) label = fSpa.title; }
+            return `${label} «${rawTitle}»`;
+        }
+
+        function handleCrmSearch() {
+            clearTimeout(crmSearchTimeout);
+            DOM.inputs.crmEntityId.value = ''; DOM.inputs.crmEntityType.value = '';
+            let query = DOM.inputs.crmSearch.value.trim();
+            if (query.length < 2) { DOM.crmDropdown.classList.remove('active'); return; }
+
+            crmSearchTimeout = setTimeout(() => {
+                let batchCmd = {
+                    'COMPANY': ['crm.company.list', { filter: { '%TITLE': query }, select: ['ID', 'TITLE'], limit: 5 }],
+                    'LEAD': ['crm.lead.list', { filter: { '%TITLE': query }, select: ['ID', 'TITLE'], limit: 5 }],
+                    'DEAL': ['crm.deal.list', { filter: { '%TITLE': query }, select: ['ID', 'TITLE'], limit: 5 }],
+                    'CONTACT': ['crm.contact.list', { filter: { '%NAME': query }, select: ['ID', 'NAME', 'LAST_NAME'], limit: 5 }]
+                };
+                spaTypes.forEach(spa => {
+                    batchCmd['SPA_' + spa.id] = ['crm.item.list', { entityTypeId: spa.id, filter: { '%title': query }, select: ['id', 'title'], limit: 5 }];
+                });
+
+                BX24.callBatch(batchCmd, function(res) {
+                    DOM.crmDropdown.innerHTML = '';
+                    let count = 0;
+                    const addResult = (typeCode, typeLabel, id, title) => {
+                        let div = document.createElement('div'); div.className = 'dropdown-item';
+                        div.innerHTML = `<span class="dropdown-item-type">${typeLabel}</span> <span>${title}</span>`;
+                        div.onclick = function() {
+                            DOM.inputs.crmEntityId.value = id; DOM.inputs.crmEntityType.value = typeCode; 
+                            DOM.inputs.crmSearch.value = `${typeLabel} «${title}»`;
+                            DOM.crmDropdown.classList.remove('active');
+                        };
+                        DOM.crmDropdown.appendChild(div); count++;
+                    };
+                    if(res.COMPANY && res.COMPANY.data()) res.COMPANY.data().forEach(i => addResult('COMPANY', 'Компания', i.ID, i.TITLE));
+                    if(res.LEAD && res.LEAD.data()) res.LEAD.data().forEach(i => addResult('LEAD', 'Лид', i.ID, i.TITLE));
+                    if(res.DEAL && res.DEAL.data()) res.DEAL.data().forEach(i => addResult('DEAL', 'Сделка', i.ID, i.TITLE));
+                    if(res.CONTACT && res.CONTACT.data()) res.CONTACT.data().forEach(i => addResult('CONTACT', 'Контакт', i.ID, (i.NAME||'') + ' ' + (i.LAST_NAME||'')));
+                    spaTypes.forEach(spa => {
+                        let key = 'SPA_' + spa.id;
+                        if(res[key] && res[key].data() && res[key].data().items) {
+                            res[key].data().items.forEach(i => addResult(spa.id, spa.title, i.id, i.title));
+                        }
+                    });
+                    if (count > 0) DOM.crmDropdown.classList.add('active'); else DOM.crmDropdown.classList.remove('active');
+                });
+            }, 600);
+        }
+
+        function loadMissingTitles(records, callback) {
+            let required = {}; 
+            if (currentEntityId && currentEntityType) required[currentEntityType] = [currentEntityId];
+
+            records.forEach(r => {
+                if (r.NAME === PWD_RECORD_NAME) {
+                    try {
+                        let pub = JSON.parse(r.DETAIL_TEXT);
+                        let key = pub.entityType + '_' + pub.entityId;
+                        if (pub.entityType && pub.entityId && !entityCache[key]) {
+                            if (!required[pub.entityType]) required[pub.entityType] = [];
+                            if (!required[pub.entityType].includes(pub.entityId)) required[pub.entityType].push(pub.entityId);
+                        }
+                    } catch(e){}
+                }
+            });
+            if (Object.keys(required).length === 0) { callback(); return; }
+            let batchCmd = {};
+            for (let type in required) {
+                let ids = required[type];
+                if (type === 'COMPANY') batchCmd[type] = ['crm.company.list', { filter: { '@ID': ids }, select: ['ID', 'TITLE'] }];
+                else if (type === 'LEAD') batchCmd[type] = ['crm.lead.list', { filter: { '@ID': ids }, select: ['ID', 'TITLE'] }];
+                else if (type === 'DEAL') batchCmd[type] = ['crm.deal.list', { filter: { '@ID': ids }, select: ['ID', 'TITLE'] }];
+                else if (type === 'CONTACT') batchCmd[type] = ['crm.contact.list', { filter: { '@ID': ids }, select: ['ID', 'NAME', 'LAST_NAME'] }];
+                else if (!isNaN(type) || String(type).startsWith('DYNAMIC')) {
+                    let typeId = String(type).replace('DYNAMIC_', '');
+                    batchCmd[type] = ['crm.item.list', { entityTypeId: typeId, filter: { '@id': ids }, select: ['id', 'title'] }];
+                }
+            }
+            if (Object.keys(batchCmd).length === 0) { callback(); return; }
+            BX24.callBatch(batchCmd, (res) => {
+                for (let type in required) {
+                    let items = []; if (res[type] && res[type].data()) items = res[type].data().items ? res[type].data().items : res[type].data();
+                    items.forEach(item => {
+                        let id = item.ID || item.id;
+                        let title = item.TITLE || item.title || ((item.NAME || '') + ' ' + (item.LAST_NAME || '')).trim() || ('#' + id);
+                        entityCache[type + '_' + id] = title;
+                    });
+                }
+                callback();
+            });
+        }
+
+        function toggleShowAll() {
+            showAll = !showAll; const btn = document.getElementById('toggle_all_btn');
+            if (showAll) {
+                btn.innerHTML = '👁️ Только текущие'; btn.classList.add('btn-edit'); btn.classList.remove('btn-outline');
+            } else {
+                btn.innerHTML = '👁️ Показать все'; btn.classList.add('btn-outline'); btn.classList.remove('btn-edit');
+            }
+            renderTable();
+        }
+
+        function openTypesModal() { document.getElementById('type_modal').classList.add('active'); renderTypesSettings(); }
+        function closeTypesModal() { document.getElementById('type_modal').classList.remove('active'); document.getElementById('new_type_input').value = ''; }
+        function renderTypesSelect() {
+            DOM.dropdown.innerHTML = ''; const rawVal = DOM.inputs.type.value.trim(); const currentVal = rawVal.toLowerCase();
+            const filtered = accessTypes.filter(t => t.toLowerCase().includes(currentVal));
+            filtered.forEach(t => {
+                let div = document.createElement('div'); div.className = 'dropdown-item'; div.textContent = t;
+                div.onclick = function() { DOM.inputs.type.value = t; hideTypeDropdown(); }; DOM.dropdown.appendChild(div);
+            });
+            if (rawVal !== '' && !accessTypes.some(t => t.toLowerCase() === currentVal)) {
+                let addDiv = document.createElement('div'); addDiv.className = 'dropdown-item dropdown-add-item'; addDiv.innerHTML = `➕ Добавить «<b>${rawVal}</b>»`;
+                addDiv.onclick = function() { DOM.inputs.type.value = rawVal; accessTypes.push(rawVal); saveTypesToStorage(); hideTypeDropdown(); };
+                DOM.dropdown.appendChild(addDiv);
+            }
+            if (DOM.dropdown.children.length === 0) hideTypeDropdown(); else DOM.dropdown.classList.add('active');
+        }
+        function showTypeDropdown() { renderTypesSelect(); }
+        function hideTypeDropdown() { DOM.dropdown.classList.remove('active'); }
+        function filterTypeDropdown() { renderTypesSelect(); }
+
+        function renderTypesSettings() {
+            const container = document.getElementById('modal_types_list'); container.innerHTML = '';
+            if(accessTypes.length === 0) { container.innerHTML = '<div style="text-align:center; padding:15px; color:var(--b24-text-light);">Список пуст.</div>'; return; }
+            accessTypes.forEach((t, index) => {
+                const row = document.createElement('div'); row.className = 'modal-list-row';
+                const textSpan = document.createElement('span'); textSpan.textContent = t; textSpan.style.flex = "1";
+                const btnGroup = document.createElement('div'); btnGroup.style.display = "flex"; btnGroup.style.gap = "4px";
+                const btnEdit = document.createElement('button'); btnEdit.className = 'btn btn-edit'; btnEdit.style.cssText = 'height:28px; padding:0 10px; font-size:12px;'; btnEdit.textContent = '✏️';
+                btnEdit.onclick = () => {
+                    const newVal = prompt('Изменить шаблон типа:', t);
+                    if (newVal !== null && newVal.trim() && newVal.trim() !== t) {
+                        if (accessTypes.includes(newVal.trim())) { alert('Такой шаблон уже есть!'); return; }
+                        accessTypes[index] = newVal.trim(); saveTypesToStorage();
+                    }
+                };
+                const btnDel = document.createElement('button'); btnDel.className = 'btn btn-danger'; btnDel.style.cssText = 'height:28px; padding:0 10px; font-size:12px;'; btnDel.textContent = '🗑️';
+                btnDel.onclick = () => { if(confirm('Удалить этот шаблон?')) { accessTypes.splice(index, 1); saveTypesToStorage(); } };
+                btnGroup.append(btnEdit, btnDel); row.append(textSpan, btnGroup); container.appendChild(row);
+            });
+        }
+        function addNewAccessType() {
+            const input = document.getElementById('new_type_input'); const val = input.value.trim(); if(!val) return;
+            if(accessTypes.includes(val)) { alert('Такой шаблон уже существует.'); return; }
+            accessTypes.push(val); input.value = ''; saveTypesToStorage();
+        }
+        function saveTypesToStorage() {
+            const payload = encryptText(JSON.stringify(accessTypes), masterKey);
+            const params = { 'ENTITY': ENTITY_ID, 'NAME': TYPES_RECORD_NAME, 'DETAIL_TEXT': payload };
+            if(typesRecordId) params.ID = typesRecordId;
+            BX24.callMethod(typesRecordId ? 'entity.item.update' : 'entity.item.add', params, function(res) {
+                if(!res.error()) { if(!typesRecordId && res.data()) typesRecordId = res.data(); renderTypesSettings(); }
+            });
+        }
+
+        function initEntityStorage() { BX24.callMethod('entity.add', { 'ENTITY': ENTITY_ID, 'NAME': 'Хранилище E2E Global', 'ACCESS': { 'AU': 'W' } }, () => checkVaultStatus()); }
+
+        function checkVaultStatus() {
+            BX24.callMethod('entity.item.get', { 'ENTITY': ENTITY_ID }, function(res) {
+                if(res.error()) return; allAppRecords = res.data();
+                const authRecord = allAppRecords.find(i => i.NAME === AUTH_RECORD_NAME);
+                const typesRecord = allAppRecords.find(i => i.NAME === TYPES_RECORD_NAME);
+                if (authRecord) {
+                    authRecordId = authRecord.ID; authRecordEncryptedPayload = authRecord.DETAIL_TEXT;
+                    if (masterKey) { 
+                        if (typesRecord) {
+                            typesRecordId = typesRecord.ID; let decryptedTypes = decryptText(typesRecord.DETAIL_TEXT, masterKey);
+                            if(decryptedTypes) { try { accessTypes = JSON.parse(decryptedTypes); } catch(e){} }
+                        }
+                        switchScreen('screen_app'); loadMissingTitles(allAppRecords, renderTable);
+                    } else { switchScreen('screen_login'); }
+                } else { switchScreen('screen_setup'); }
+            });
+        }
+
+        function refreshData() {
+            BX24.callMethod('entity.item.get', { 'ENTITY': ENTITY_ID }, function(res) {
+                if(!res.error()) { 
+                    allAppRecords = res.data(); const typesRecord = allAppRecords.find(i => i.NAME === TYPES_RECORD_NAME);
+                    if (typesRecord) {
+                        typesRecordId = typesRecord.ID; let decryptedTypes = decryptText(typesRecord.DETAIL_TEXT, masterKey);
+                        if(decryptedTypes) { try { accessTypes = JSON.parse(decryptedTypes); } catch(e){} }
+                    }
+                    loadMissingTitles(allAppRecords, renderTable);
+                }
+            });
+        }
+
+        function setupMasterPassword() {
+            const pwd = document.getElementById('setup_password').value.trim(); if (!pwd) { document.getElementById('setup_error').style.display = 'block'; return; }
+            masterKey = pwd; 
+            BX24.callMethod('entity.item.add', { 'ENTITY': ENTITY_ID, 'NAME': AUTH_RECORD_NAME, 'DETAIL_TEXT': encryptText(AUTH_CHECK_WORD, pwd) }, function(res) { 
+                if(!res.error()) { authRecordId = res.data(); saveTypesToStorage(); checkVaultStatus(); } 
+            });
+        }
+
+        function unlockVault() {
+            const pwd = document.getElementById('login_password').value;
+            if (decryptText(authRecordEncryptedPayload, pwd) === AUTH_CHECK_WORD) {
+                masterKey = pwd; document.getElementById('login_password').value = ''; switchScreen('screen_app'); refreshData();
+            } else { document.getElementById('login_error').style.display = 'block'; }
+        }
+
+        function createSafeCell(text, isCode = false) {
+            const td = document.createElement('td'); td.textContent = text || ''; 
+            if(isCode) { td.style.fontFamily = "monospace"; td.style.letterSpacing = "0.5px"; }
+            return td;
+        }
+
+        function renderTable() {
+            DOM.tbody.innerHTML = '';
+            let dataRecords = allAppRecords.filter(item => item.NAME === PWD_RECORD_NAME);
+            const searchQuery = document.getElementById('search_input').value.toLowerCase();
+            document.getElementById('th_affiliation').style.display = showAll ? 'table-cell' : 'none';
+
+            const fragment = document.createDocumentFragment(); let visibleCount = 0;
+
+            dataRecords.forEach(item => {
+                let pub = { type: '', comment: '', entityId: '', entityType: '', secure: '' };
+                let sec = { address: '', login: '', password: '⚠️ Ошибка расшифровки' };
+                try {
+                    pub = JSON.parse(item.DETAIL_TEXT);
+                    if (pub.secure) { let dec = decryptText(pub.secure, masterKey); if (dec) sec = JSON.parse(dec); }
+                } catch (e) {}
+
+                let rawTitle = pub.entityId ? (entityCache[pub.entityType + '_' + pub.entityId] || `#${pub.entityId}`) : 'Общее';
+                if (!showAll && (String(pub.entityId) !== String(currentEntityId) || String(pub.entityType) !== String(currentEntityType))) return; 
+                if (searchQuery && !`${pub.type} ${sec.address} ${sec.login} ${pub.comment} ${rawTitle}`.toLowerCase().includes(searchQuery)) return; 
+                
+                visibleCount++;
+
+                let affHtml = '<span style="color:var(--b24-text-light)">Общее</span>';
+                if (pub.entityId && pub.entityType) {
+                    let eLabel = pub.entityType;
+                    if(pub.entityType === 'COMPANY') eLabel = 'Компания';
+                    else if(pub.entityType === 'LEAD') eLabel = 'Лид';
+                    else if(pub.entityType === 'DEAL') eLabel = 'Сделка';
+                    else if(pub.entityType === 'CONTACT') eLabel = 'Контакт';
+                    else { let fSpa = spaTypes.find(s => String(s.id) === String(pub.entityType)); if(fSpa) eLabel = fSpa.title; }
+                    
+                    let path = '';
+                    if (pub.entityType === 'COMPANY') path = `/crm/company/details/${pub.entityId}/`;
+                    else if (pub.entityType === 'LEAD') path = `/crm/lead/details/${pub.entityId}/`;
+                    else if (pub.entityType === 'DEAL') path = `/crm/deal/details/${pub.entityId}/`;
+                    else if (pub.entityType === 'CONTACT') path = `/crm/contact/details/${pub.entityId}/`;
+                    else if (!isNaN(pub.entityType)) path = `/crm/type/${pub.entityType}/details/${pub.entityId}/`;
+
+                    if (path) affHtml = `<a class="affiliation-link" href="javascript:void(0)" onclick="BX24.openPath('${path}'); return false;">${eLabel} «${rawTitle}»</a>`;
+                    else affHtml = `<span style="font-size:12px; color:var(--b24-text-light)">${eLabel} «${rawTitle}»</span>`;
+                }
+
+                let tr = document.createElement('tr');
+                tr.appendChild(createSafeCell(pub.type));
+                tr.appendChild(createSafeCell(sec.address)); 
+                tr.appendChild(createSafeCell(sec.login));
+                tr.appendChild(createSafeCell(sec.password, true));
+                tr.appendChild(createSafeCell(pub.comment));
+                
+                if (showAll) {
+                    let tdAff = document.createElement('td'); tdAff.className = 'mobile-aff-cell'; tdAff.innerHTML = affHtml;
+                    tr.appendChild(tdAff);
+                }
+
+                let tdActions = document.createElement('td'); tdActions.className = 'actions-cell';
+                let btnsWrapper = document.createElement('div'); btnsWrapper.style.display = 'flex'; btnsWrapper.style.gap = '4px';
+
+                let btnCopy = document.createElement('button'); btnCopy.className = 'btn btn-outline'; btnCopy.style.cssText = 'height:30px; padding:0 10px;'; btnCopy.innerHTML = '📋';
+                btnCopy.onclick = () => {
+                    let parts = [];
+                    if (pub.type) parts.push(`Тип: ${pub.type}`); if (sec.address) parts.push(`Адрес: ${sec.address}`);
+                    if (sec.login) parts.push(`Логин: ${sec.login}`); if (sec.password && sec.password !== "⚠️ Ошибка расшифровки") parts.push(`Пароль: ${sec.password}`);
+                    if (pub.comment) parts.push(`Комментарий: ${pub.comment}`);
+                    let textArea = document.createElement("textarea"); textArea.value = parts.join('\n'); textArea.style.position = "fixed"; textArea.style.left = "-9999px";
+                    document.body.appendChild(textArea); textArea.focus(); textArea.select();
+                    try { document.execCommand('copy'); btnCopy.innerHTML = '✅'; setTimeout(() => btnCopy.innerHTML = '📋', 1500); } catch (e) {}
+                    document.body.removeChild(textArea);
+                };
+
+                let btnEdit = document.createElement('button'); btnEdit.className = 'btn btn-edit'; btnEdit.style.cssText = 'height:30px; padding:0 10px;'; btnEdit.innerHTML = '✏️';
+                btnEdit.onclick = () => editAccess(item.ID, pub.type, sec.address, sec.login, sec.password, pub.comment, pub.entityId, pub.entityType, rawTitle);
+
+                let btnDel = document.createElement('button'); btnDel.className = 'btn btn-danger'; btnDel.style.cssText = 'height:30px; padding:0 10px;'; btnDel.innerHTML = '🗑️';
+                btnDel.onclick = () => deleteAccess(item.ID);
+
+                btnsWrapper.append(btnCopy, btnEdit, btnDel); tdActions.appendChild(btnsWrapper); tr.appendChild(tdActions);
+                fragment.appendChild(tr);
+            });
+
+            if (visibleCount === 0) {
+                DOM.tbody.innerHTML = `<tr><td colspan="${showAll ? 7 : 6}" style="text-align: center; color: var(--b24-text-light); padding: 30px 10px;">Ничего не найдено.</td></tr>`;
+            } else { DOM.tbody.appendChild(fragment); }
+        }
+
+        function saveAccess() {
+            const vals = { id: DOM.inputs.id.value.trim(), type: DOM.inputs.type.value.trim(), address: DOM.inputs.name.value.trim(), login: DOM.inputs.login.value.trim(), password: DOM.inputs.password.value.trim(), comment: DOM.inputs.comment.value.trim() };
+            if (!vals.login || !vals.password) { document.getElementById('form_error').style.display = 'block'; return; }
+            document.getElementById('form_error').style.display = 'none';
+
+            const secureData = JSON.stringify({ address: vals.address, login: vals.login, password: vals.password });
+            const publicData = { type: vals.type, comment: vals.comment, entityId: DOM.inputs.crmEntityId.value, entityType: DOM.inputs.crmEntityType.value, secure: encryptText(secureData, masterKey) };
+            const params = { 'ENTITY': ENTITY_ID, 'NAME': PWD_RECORD_NAME, 'DETAIL_TEXT': JSON.stringify(publicData) };
+            
+            DOM.buttons.save.innerText = 'Сохранение...'; DOM.buttons.save.disabled = true;
+            if (vals.id) { params.ID = vals.id; BX24.callMethod('entity.item.update', params, (res) => resetSaveButton(res)); } 
+            else { params.ID = ''; BX24.callMethod('entity.item.add', params, (res) => resetSaveButton(res)); }
+        }
+
+        function resetSaveButton(res) {
+            DOM.buttons.save.innerText = 'Сохранить'; DOM.buttons.save.disabled = false;
+            if(!res.error()) { closeAddModal(); refreshData(); } else { alert('Ошибка: ' + res.error()); }
+        }
+
+        function editAccess(id, type, address, login, password, comment, entityId, entityType, rawTitle) {
+            DOM.inputs.id.value = id; DOM.inputs.type.value = type; DOM.inputs.name.value = address; DOM.inputs.login.value = login;
+            DOM.inputs.password.value = password === "⚠️ Ошибка расшифровки" ? "" : password; DOM.inputs.comment.value = comment;
+            DOM.inputs.crmEntityId.value = entityId || ''; DOM.inputs.crmEntityType.value = entityType || ''; 
+            DOM.inputs.crmSearch.value = entityId ? formatEntityCacheTitle(entityType, rawTitle) : ''; 
+            document.getElementById('add_modal_title').innerText = 'Редактировать доступ'; openAddModal();
+        }
+
+        function deleteAccess(id) { if (confirm('Вы уверены, что хотите удалить этот доступ?')) { BX24.callMethod('entity.item.delete', { 'ENTITY': ENTITY_ID, 'ID': id }, () => refreshData()); } }
+
+        function executePasswordChange() {
+            const oldPwd = document.getElementById('change_old_pwd').value; const newPwd = document.getElementById('change_new_pwd').value.trim(); const error = document.getElementById('change_error');
+            if (oldPwd !== masterKey) { error.innerText = 'Текущий пароль неверный!'; error.style.display = 'block'; return; }
+            if (!newPwd || oldPwd === newPwd) { error.innerText = 'Введите новый пароль'; error.style.display = 'block'; return; }
+            error.style.display = 'none';
+
+            let batchData = {};
+            allAppRecords.forEach((item, idx) => {
+                let fields = { 'NAME': item.NAME };
+                if (item.NAME === AUTH_RECORD_NAME) fields['DETAIL_TEXT'] = encryptText(AUTH_CHECK_WORD, newPwd);
+                else if (item.NAME === TYPES_RECORD_NAME) { let dec = decryptText(item.DETAIL_TEXT, oldPwd); if (dec) fields['DETAIL_TEXT'] = encryptText(dec, newPwd); }
+                else if (item.NAME === PWD_RECORD_NAME) {
+                    let pub = {}; try { pub = JSON.parse(item.DETAIL_TEXT); } catch(e) {}
+                    if (pub.secure) { let dec = decryptText(pub.secure, oldPwd); if (dec) { pub.secure = encryptText(dec, newPwd); fields['DETAIL_TEXT'] = JSON.stringify(pub); } }
+                }
+                if(fields['DETAIL_TEXT']) batchData['cmd_' + idx] = ['entity.item.update', { 'ENTITY': ENTITY_ID, 'ID': item.ID, ...fields }];
+            });
+
+            document.querySelector('#screen_change_master .btn-danger').innerText = 'Перешифровка...';
+            BX24.callBatch(batchData, () => {
+                document.querySelector('#screen_change_master .btn-danger').innerText = 'Сменить пароль';
+                document.getElementById('change_old_pwd').value = ''; document.getElementById('change_new_pwd').value = '';
+                masterKey = newPwd; switchScreen('screen_app'); refreshData(); 
+            });
+        }
+    </script>
 </body>
 </html>
